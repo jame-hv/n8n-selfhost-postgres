@@ -1,221 +1,125 @@
-# n8n Enterprise Docker Compose Setup
+# n8n Docker Setup with Traefik and PostgreSQL
 
-This repository contains a production-ready Docker Compose configuration for n8n Enterprise with PostgreSQL and Redis.
+This setup provides a production-ready n8n installation with:
 
-## Features
-
-- **n8n Enterprise** - Latest version with enterprise features
-- **PostgreSQL 15** - Primary database with optimized settings
-- **Redis 7** - Queue management and caching
-- **Queue Mode** - Separate worker processes for better performance
-- **Health Checks** - Proper health monitoring for all services
-- **Data Persistence** - All data stored in `./data/` directory
-- **Production Ready** - Optimized for production environments
+- **Traefik** as reverse proxy with automatic SSL certificates
+- **PostgreSQL** as database
+- **Optimized for t2.micro** AWS instances (1GB RAM)
 
 ## Quick Start
 
-1. **Copy environment file:**
+1. **Setup environment variables:**
 
    ```bash
-   cp .env.example .env
+   chmod +x setup.sh
+   ./setup.sh
    ```
 
-2. **Edit the `.env` file:**
-
-   - Set strong passwords for `POSTGRES_PASSWORD`
-   - Generate secure keys for `N8N_ENCRYPTION_KEY` and `N8N_JWT_SECRET`
-   - Add your enterprise license key to `N8N_LICENSE_KEY`
-   - Configure other settings as needed
-
-3. **Generate encryption keys:**
+2. **Edit .env file** and update:
 
    ```bash
-   # Generate encryption key
-   openssl rand -base64 32
-
-   # Generate JWT secret
-   openssl rand -base64 32
+   DOMAIN_NAME=yourdomain.com
+   SUBDOMAIN=n8n
+   SSL_EMAIL=your@email.com
    ```
 
-4. **Start the services:**
+3. **Create required directories:**
 
    ```bash
-   docker-compose up -d
+   mkdir -p docker/postgres/data docker/n8n
    ```
 
-5. **Access n8n:**
-   - Open http://localhost:5678 in your browser
-   - Follow the setup wizard to create your first admin user
+4. **Set up DNS:**
 
-## Directory Structure
+   - Create an A record for `n8n.yourdomain.com` pointing to your server's IP
 
-```
-n8n/
-├── docker-compose.yaml     # Main compose file
-├── .env                   # Environment variables (create from .env.example)
-├── .env.example          # Environment template
-├── data/                 # Persistent data
-│   ├── postgres/         # PostgreSQL data
-│   ├── redis/           # Redis data
-│   └── n8n/             # n8n data (workflows, credentials, etc.)
-└── README.md            # This file
-```
+5. **Deploy:**
+
+   ```bash
+   docker compose up -d
+   ```
+
+6. **Access n8n:**
+   - Visit `https://n8n.yourdomain.com`
+   - Create your first admin user
 
 ## Configuration
 
-### Environment Variables
+### Memory Optimization for t2.micro
 
-| Variable             | Description                   | Required |
-| -------------------- | ----------------------------- | -------- |
-| `POSTGRES_PASSWORD`  | PostgreSQL password           | ✅       |
-| `N8N_ENCRYPTION_KEY` | n8n encryption key (32 chars) | ✅       |
-| `N8N_JWT_SECRET`     | JWT secret for user sessions  | ✅       |
-| `N8N_LICENSE_KEY`    | Enterprise license key        | ✅       |
-| `N8N_HOST`           | Domain name for n8n           | ✅       |
-| `N8N_PROTOCOL`       | http or https                 | ✅       |
-| `WEBHOOK_URL`        | Full webhook URL              | ✅       |
+- PostgreSQL: 128MB limit, 64MB reserved
+- n8n: 384MB limit, 256MB reserved
+- Node.js heap: 512MB max
+- Limited PostgreSQL connections: 5
+- Single execution concurrency
 
-### Production Deployment
+### Security Features
 
-For production deployment, consider:
+- Automatic SSL certificates via Let's Encrypt
+- Secure cookies enabled
+- Environment access blocked in nodes
+- Settings file permissions enforced
 
-1. **SSL/TLS**: Use a reverse proxy (nginx, Traefik) with SSL certificates
-2. **Domain**: Set proper domain name in `N8N_HOST`
-3. **Security**: Enable secure cookies, use strong passwords
-4. **Monitoring**: Add monitoring and alerting
-5. **Backups**: Regular database and data backups
-6. **Scaling**: Increase worker replicas based on load
+### Data Persistence
 
-### Example nginx reverse proxy config:
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    return 301 https://$server_name$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name your-domain.com;
-
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-
-    location / {
-        proxy_pass http://localhost:5678;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # WebSocket support
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-```
-
-## Management Commands
-
-### Start services:
-
-```bash
-docker-compose up -d
-```
-
-### Stop services:
-
-```bash
-docker-compose down
-```
-
-### View logs:
-
-```bash
-# All services
-docker-compose logs -f
-
-# Specific service
-docker-compose logs -f n8n
-```
-
-### Restart services:
-
-```bash
-docker-compose restart
-```
-
-### Scale workers:
-
-```bash
-docker-compose up -d --scale n8n-worker=4
-```
-
-### Database backup:
-
-```bash
-docker-compose exec postgres pg_dump -U n8n n8n > backup.sql
-```
-
-### Database restore:
-
-```bash
-docker-compose exec -T postgres psql -U n8n n8n < backup.sql
-```
+- PostgreSQL data: `./docker/postgres/data`
+- n8n data: `./docker/n8n`
+- Shared files: `./local-files` (mounted as `/files` in n8n)
+- SSL certificates: Docker volume `traefik_data`
 
 ## Monitoring
-
-Health checks are configured for all services:
-
-- PostgreSQL: `pg_isready` check
-- Redis: `redis-cli ping` check
-- n8n: HTTP health endpoint check
 
 Check service status:
 
 ```bash
-docker-compose ps
+docker compose ps
+docker compose logs -f n8n
+docker compose logs -f postgres
+docker compose logs -f traefik
 ```
 
 ## Troubleshooting
 
-### Common Issues:
+### Permission Issues
 
-1. **Permission issues**: Make sure the `data/` directory is writable
-2. **Port conflicts**: Change `N8N_PORT` if 5678 is already in use
-3. **Memory issues**: Increase Docker memory limits for better performance
-4. **License issues**: Verify your enterprise license key is valid
+The setup includes automatic `chown` for n8n data directory.
 
-### Useful Commands:
+### SSL Certificate Issues
+
+- Ensure DNS points to your server
+- Check Traefik logs: `docker compose logs traefik`
+- Verify port 80/443 are accessible
+
+### Memory Issues
+
+- Monitor with: `docker stats`
+- Adjust resource limits in docker-compose.yaml if needed
+
+## Environment Variables
+
+| Variable             | Description         | Default            |
+| -------------------- | ------------------- | ------------------ |
+| `DOMAIN_NAME`        | Your domain         | `example.com`      |
+| `SUBDOMAIN`          | n8n subdomain       | `n8n`              |
+| `SSL_EMAIL`          | Email for SSL certs | Required           |
+| `POSTGRES_PASSWORD`  | DB password         | Auto-generated     |
+| `N8N_ENCRYPTION_KEY` | n8n encryption      | Auto-generated     |
+| `N8N_JWT_SECRET`     | JWT secret          | Auto-generated     |
+| `TIMEZONE`           | System timezone     | `Asia/Ho_Chi_Minh` |
+
+## Updating
 
 ```bash
-# Check service health
-docker-compose ps
-
-# View detailed logs
-docker-compose logs -f --tail=100
-
-# Execute commands in containers
-docker-compose exec n8n bash
-docker-compose exec postgres psql -U n8n n8n
-
-# Reset everything (WARNING: deletes all data)
-docker-compose down -v
-sudo rm -rf data/
+docker compose pull
+docker compose up -d
 ```
 
-## Security Considerations
+## Backup
 
-- Change all default passwords
-- Use strong encryption keys
-- Enable HTTPS in production
-- Regularly update Docker images
-- Monitor for security updates
-- Implement proper firewall rules
-- Use secrets management for sensitive data
+```bash
+# Database backup
+docker compose exec postgres pg_dump -U n8n n8n > backup.sql
 
-## Support
-
-For n8n Enterprise support, contact the n8n team or check the official documentation at https://docs.n8n.io/
+# Data backup
+tar -czf n8n-backup.tar.gz docker/ local-files/
+```
