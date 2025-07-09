@@ -7,9 +7,9 @@
 
 
 #data
-data/n8n
-data/postgres
-data/redis
+docker/n8n
+docker/postgres
+docker/redis
 
 # Logs
 *.log
