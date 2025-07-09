@@ -1,0 +1,187 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: n8n-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-n8n}
+      POSTGRES_USER: ${POSTGRES_USER:-n8n}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-n8n}
+    volumes:
+      - ./data/postgres/data:/var/lib/postgresql/data
+    networks:
+      - n8n-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-n8n} -d ${POSTGRES_DB:-n8n}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: n8n-redis
+    restart: unless-stopped
+    volumes:
+      - ./data/redis/data:/data
+    networks:
+      - n8n-network
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # n8n Enterprise
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n-app
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      # Database Configuration
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-n8n}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-n8n}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-n8n}
+      
+      # Redis Configuration
+      QUEUE_BULL_REDIS_HOST: redis
+      QUEUE_BULL_REDIS_PORT: 6379
+      EXECUTIONS_MODE: queue
+      
+      # n8n Configuration
+      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      WEBHOOK_URL: ${WEBHOOK_URL:-http://localhost:5678}
+      
+      # Security
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_USER_MANAGEMENT_JWT_SECRET: ${N8N_JWT_SECRET}
+      
+      # Enterprise Features
+      N8N_LICENSE_ACTIVATION_KEY: ${N8N_LICENSE_KEY}
+      N8N_ENTERPRISE_LICENSE_ACTIVATION_KEY: ${N8N_LICENSE_KEY}
+      
+      # Performance
+      N8N_PAYLOAD_SIZE_MAX: ${N8N_PAYLOAD_SIZE_MAX:-16}
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: 336
+      
+      # Logging
+      N8N_LOG_LEVEL: ${N8N_LOG_LEVEL:-info}
+      N8N_LOG_OUTPUT: ${N8N_LOG_OUTPUT:-console,file}
+      N8N_LOG_FILE_LOCATION: /home/node/.n8n/logs/
+      
+      # Email Configuration (optional)
+      N8N_EMAIL_MODE: ${N8N_EMAIL_MODE:-smtp}
+      N8N_SMTP_HOST: ${N8N_SMTP_HOST}
+      N8N_SMTP_PORT: ${N8N_SMTP_PORT:-587}
+      N8N_SMTP_USER: ${N8N_SMTP_USER}
+      N8N_SMTP_PASS: ${N8N_SMTP_PASS}
+      N8N_SMTP_SENDER: ${N8N_SMTP_SENDER}
+      
+      # Timezone
+      GENERIC_TIMEZONE: ${TIMEZONE:-UTC}
+      TZ: ${TIMEZONE:-UTC}
+      
+      # User Management
+      N8N_USER_MANAGEMENT_DISABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "true"
+      
+      # Security Headers
+      N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE:-false}
+      N8N_DISABLE_UI: "false"
+      
+    volumes:
+      - ./data/n8n:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - n8n-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # n8n Worker (for queue mode)
+  n8n-worker:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    command: worker
+    environment:
+      # Database Configuration
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-n8n}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-n8n}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-n8n}
+      
+      # Redis Configuration
+      QUEUE_BULL_REDIS_HOST: redis
+      QUEUE_BULL_REDIS_PORT: 6379
+      EXECUTIONS_MODE: queue
+      
+      # Security
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      
+      # Enterprise Features
+      N8N_LICENSE_ACTIVATION_KEY: ${N8N_LICENSE_KEY}
+      N8N_ENTERPRISE_LICENSE_ACTIVATION_KEY: ${N8N_LICENSE_KEY}
+      
+      # Performance
+      N8N_PAYLOAD_SIZE_MAX: ${N8N_PAYLOAD_SIZE_MAX:-16}
+      
+      # Logging
+      N8N_LOG_LEVEL: ${N8N_LOG_LEVEL:-info}
+      
+      # Timezone
+      GENERIC_TIMEZONE: ${TIMEZONE:-UTC}
+      TZ: ${TIMEZONE:-UTC}
+      
+    volumes:
+      - ./data/n8n:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - n8n-network
+    deploy:
+      replicas: ${N8N_WORKER_REPLICAS:-2}
+
+networks:
+  n8n-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  n8n_data:

@@ -1,0 +1,33 @@
+
+
+# Environment files
+.env
+.env.local
+.env.production
+
+
+#data
+data/n8n
+data/postgres
+data/redis
+
+# Logs
+*.log
+logs/
+
+# Backups
+*.sql
+*.dump
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+docker-compose.override.yml
