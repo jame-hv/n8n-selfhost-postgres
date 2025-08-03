@@ -8,11 +8,10 @@ This setup provides a production-ready n8n installation with:
 
 ## Quick Start
 
-1. **Setup environment variables:**
+1. **SSH to your server: **
 
    ```bash
-   chmod +x setup.sh
-   ./setup.sh
+   ssh -i ....
    ```
 
 2. **Edit .env file** and update:
@@ -45,7 +44,7 @@ This setup provides a production-ready n8n installation with:
 
 ## Configuration
 
-### Memory Optimization for t2.micro
+### Memory Optimization for small vps
 
 - PostgreSQL: 128MB limit, 64MB reserved
 - n8n: 384MB limit, 256MB reserved
